@@ -1,107 +1,91 @@
-import * as through2 from 'through2'
+import * as whenAllSettled from 'when-all-settled'
 
 import db, { getAttachmentAsDataUrl } from '../../pouchdb'
-import { ExportedPage } from '../migration'
+import { ExportedPage, ExportedPageVisit } from '../migration'
+import { removeKeyType, initLookupByKeys } from './util'
 import index from './index'
 
-function exportPages({ chunkSize = 10 } = {}) {
-    let lastKey = 'page/'
-    let ended = false
-
-    const consumeNext = () => {
-        if (ended) {
-            return Promise.resolve(null)
-        }
-
-        const data = []
-
-        return new Promise((resolve, reject) => {
-            ;(<any>index)
-                .createKeyStream({
-                    gt: lastKey,
-                    lt: 'page/\uffff',
-                    limit: chunkSize,
-                    keyAsBuffer: false,
-                })
-                .pipe(
-                    through2.obj(async function(key, enc, cb) {
-                        lastKey = key
-
-                        const pouchDoc = await db.get(key)(<any>index).get(
-                            key,
-                            { asBuffer: false },
-                            async (err, indexDoc) => {
-                                if (err) {
-                                    // TODO: Design error handling
-                                    return cb(err)
-                                }
-
-                                const getVisit = (visit: string) => ({
-                                    timestamp: parseInt(
-                                        visit.substr('visit/'.length),
-                                    ),
-                                })
-                                const getBookmark = () =>
-                                    parseInt(
-                                        indexDoc.bookmarks
-                                            .values()
-                                            .next()
-                                            .value.substr('bookmark/'.length),
-                                    )
-                                const screenshot = await getAttachmentAsDataUrl(
-                                    {
-                                        doc: pouchDoc,
-                                        attachmentId: 'screenshot',
-                                    },
-                                )
-                                const favIcon = await getAttachmentAsDataUrl({
-                                    doc: pouchDoc,
-                                    attachmentId: 'favicon',
-                                })
-                                const page: ExportedPage = {
-                                    url: pouchDoc.url,
-                                    content: {
-                                        lang: pouchDoc.content.lang,
-                                        title: pouchDoc.content.title,
-                                        fullText: pouchDoc.content.fullText,
-                                        keywords: pouchDoc.content.keywords,
-                                        description:
-                                            pouchDoc.content.description,
-                                    },
-                                    visits: Array.from(indexDoc.visits).map(
-                                        getVisit,
-                                    ),
-                                    tags: Array.from(
-                                        indexDoc.tags,
-                                    ).map((tag: string) =>
-                                        tag.substr('tag/'.length),
-                                    ),
-                                    bookmark: indexDoc.bookmarks.size
-                                        ? getBookmark()
-                                        : null,
-                                    screenshot,
-                                    favIcon,
-                                }
-                                this.push(page)
-
-                                cb()
-                            },
-                        )
-                    }),
-                )
-                .on('data', obj => {
-                    data.push(obj)
-                })
-                .on('end', () => {
-                    ended = data.length !== chunkSize
-                    resolve(data)
-                })
-        })
-    }
-
-    return {
-        next: consumeNext,
-    }
+export interface ExportParams {
+    chunkSize: number
+    startKey: string
+    endKey: string
 }
+
+const DEF_PARAMS: ExportParams = {
+    chunkSize: 10,
+    startKey: 'page/',
+    endKey: 'page/\uffff',
+}
+
+async function* exportPages(
+    {
+        chunkSize = DEF_PARAMS.chunkSize,
+        startKey = DEF_PARAMS.startKey,
+        endKey = DEF_PARAMS.endKey,
+    }: Partial<ExportParams> = DEF_PARAMS,
+) {
+    let lastKey = startKey
+    let batch: Map<string, any>
+
+    do {
+        // Get batch for current key + limit, then update the key for next iteration
+        batch = await fetchIndexPageBatch(lastKey, chunkSize)
+        lastKey = [...batch.keys()][batch.size - 1]
+
+        // Process each key, fetching needed data, then yielding it to caller
+        yield await whenAllSettled([...batch].map(processKey))
+    } while (batch.size === chunkSize)
+}
+
+const fetchIndexPageBatch = (
+    from: string,
+    limit: number,
+): Promise<Map<string, any>> =>
+    new Promise((resolve, reject) => {
+        const data = new Map<string, any>()
+        ;(<any>index)
+            .createReadStream({ gte: from, limit, keyAsBuffer: false })
+            .on('data', ({ key, value }) => data.set(key, value))
+            .on('error', err => reject(err))
+            .on('end', () => resolve(data))
+    })
+
+async function processKey([key, indexDoc]: [string, any]) {
+    const pouchDoc = await db.get(key)
+
+    const screenshot = await getAttachmentAsDataUrl({
+        doc: pouchDoc,
+        attachmentId: 'screenshot',
+    })
+    const favIcon = await getAttachmentAsDataUrl({
+        doc: pouchDoc,
+        attachmentId: 'favicon',
+    })
+
+    // Grab all visit meta data
+    let visits: ExportedPageVisit[]
+    if (indexDoc.visits.size) {
+        const lookupMap = await initLookupByKeys()([...indexDoc.visits])
+        visits = [...lookupMap.values()]
+    } else {
+        visits = []
+    }
+
+    const page: ExportedPage = {
+        url: pouchDoc.url,
+        content: { ...pouchDoc.content },
+        visits: visits,
+        bookmark: indexDoc.bookmarks.size
+            ? formatMetaKey([...indexDoc.bookmarks][0])
+            : null,
+        tags: [...indexDoc.tags].map(removeKeyType),
+        screenshot,
+        favIcon,
+    }
+
+    return page
+}
+
+const formatMetaKey = (key: string) => Number.parseInt(removeKeyType(key), 10)
 
 export default exportPages
