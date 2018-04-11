@@ -1,4 +1,4 @@
-import * as whenAllSettled from 'when-all-settled'
+import whenAllSettled from 'when-all-settled'
 
 import db, { getAttachmentAsDataUrl } from '../../pouchdb'
 import { ExportedPage, ExportedPageVisit } from '../migration'
@@ -50,8 +50,12 @@ const fetchIndexPageBatch = (
             .on('end', () => resolve(data))
     })
 
-async function processKey([key, indexDoc]: [string, any]) {
-    const pouchDoc = await db.get(key)
+interface VisitMeta extends ExportedPageVisit {
+    pageId: string
+}
+
+async function processKey([pageKey, indexDoc]: [string, any]) {
+    const pouchDoc = await db.get(pageKey)
 
     const screenshot = await getAttachmentAsDataUrl({
         doc: pouchDoc,
@@ -59,14 +63,21 @@ async function processKey([key, indexDoc]: [string, any]) {
     })
     const favIcon = await getAttachmentAsDataUrl({
         doc: pouchDoc,
-        attachmentId: 'favicon',
+        attachmentId: 'favIcon',
     })
 
     // Grab all visit meta data
     let visits: ExportedPageVisit[]
     if (indexDoc.visits.size) {
-        const lookupMap = await initLookupByKeys()([...indexDoc.visits])
-        visits = [...lookupMap.values()]
+        const lookupMap: Map<string, VisitMeta> = await initLookupByKeys()([
+            ...indexDoc.visits,
+        ])
+
+        // Reshape found visit index docs to ExportedPageVisit shape
+        visits = [...lookupMap].map(([visitKey, { pageId, ...visit }]) => ({
+            timestamp: formatMetaKey(visitKey),
+            ...visit,
+        }))
     } else {
         visits = []
     }
