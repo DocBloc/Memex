@@ -1,6 +1,6 @@
 import whenAllSettled from 'when-all-settled'
 
-import db, { getAttachmentAsDataUrl } from '../../pouchdb'
+import db from '../../pouchdb'
 import { ExportedPage, ExportedPageVisit } from '../migration'
 import { removeKeyType, initLookupByKeys } from './util'
 import index from './index'
@@ -54,17 +54,33 @@ interface VisitMeta extends ExportedPageVisit {
     pageId: string
 }
 
-async function processKey([pageKey, indexDoc]: [string, any]) {
-    const pouchDoc = await db.get(pageKey)
+interface PageAttachments {
+    screenshot: string
+    favIcon: string
+}
 
-    const screenshot = await getAttachmentAsDataUrl({
-        doc: pouchDoc,
-        attachmentId: 'screenshot',
-    })
-    const favIcon = await getAttachmentAsDataUrl({
-        doc: pouchDoc,
-        attachmentId: 'favIcon',
-    })
+const attachmentToDataUrl = ({ content_type, data }) =>
+    `data:${content_type};base64,${data}`
+
+function extractAttachments(pouchDoc): Partial<PageAttachments> {
+    if (!pouchDoc || !pouchDoc._attachments) {
+        return {}
+    }
+
+    let favIcon, screenshot
+    if (pouchDoc._attachments.screenshot) {
+        screenshot = attachmentToDataUrl(pouchDoc._attachments.screenshot)
+    }
+    if (pouchDoc._attachments.favIcon) {
+        favIcon = attachmentToDataUrl(pouchDoc._attachments.favIcon)
+    }
+
+    return { screenshot, favIcon }
+}
+
+async function processKey([pageKey, indexDoc]: [string, any]) {
+    const pouchDoc = await db.get(pageKey, { attachments: true })
+    const attachments = extractAttachments(pouchDoc)
 
     // Grab all visit meta data
     let visits: ExportedPageVisit[]
@@ -88,10 +104,9 @@ async function processKey([pageKey, indexDoc]: [string, any]) {
         visits: visits,
         bookmark: indexDoc.bookmarks.size
             ? formatMetaKey([...indexDoc.bookmarks][0])
-            : null,
+            : undefined,
         tags: [...indexDoc.tags].map(removeKeyType),
-        screenshot,
-        favIcon,
+        ...attachments,
     }
 
     return page
