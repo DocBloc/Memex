@@ -36,7 +36,7 @@ async function* exportPages(
         const pages: Partial<ExportedPage>[] = await whenAllSettled(
             [...batch].map(processKey),
         )
-        yield pages.filter(page => page != null)
+        yield { pages: pages.filter(page => page != null), lastKey }
     } while (batch.size === chunkSize)
 }
 
