@@ -18,8 +18,11 @@ async function insertTestPageIntoOldIndex() {
         bookmarkDocs: [],
         visits: [data.TEST_VISIT_1],
     })
-    await search.addTag(data.PAGE_DOC_1.url, 'virus')
-    await search.addTag(data.PAGE_DOC_1.url, 'fix')
+    await Promise.all(
+        data.EXPORTED_PAGE_1.tags.map(tag =>
+            search.addTag(data.PAGE_DOC_1.url, tag),
+        ),
+    )
     await search.addBookmark({
         url: data.PAGE_DOC_1.url,
         timestamp: data.TEST_BOOKMARK_1,
@@ -46,22 +49,7 @@ describe('Old search index', () => {
 
     test('Exporting data', async () => {
         for await (const { pages: [page] } of exportOldPages()) {
-            expect(page).toEqual(<ExportedPage>{
-                url: 'https://www.2-spyware.com/remove-skype-virus.html',
-                content: {
-                    canonicalUrl: data.PAGE_DOC_1.content.canonicalUrl,
-                    lang: data.PAGE_DOC_1.content.lang,
-                    title: data.PAGE_DOC_1.content.title,
-                    fullText: data.PAGE_DOC_1.content.fullText,
-                    keywords: data.PAGE_DOC_1.content.keywords,
-                    description: data.PAGE_DOC_1.content.description,
-                },
-                visits: [{ timestamp: data.TEST_VISIT_1 }],
-                tags: ['virus', 'fix'],
-                bookmark: data.TEST_BOOKMARK_1,
-                screenshot: data.TEST_SCREENSHOT,
-                favIcon: data.TEST_FAVICON,
-            })
+            expect(page).toEqual(data.EXPORTED_PAGE_1)
         }
     })
 })
@@ -77,27 +65,8 @@ describe('New search index', () => {
     })
 
     test('Importing data', async () => {
-        const visit1 = Date.now(),
-            visit2 = Date.now() + 50 * 1000
-        const tag1 = 'footag',
-            tag2 = 'spamtag'
         const bookmark1 = Date.now() + 5000
-
-        await importNewPage({
-            url: data.PAGE_DOC_1.url,
-            content: {
-                lang: data.PAGE_DOC_1.content.lang,
-                title: data.PAGE_DOC_1.content.title,
-                fullText: data.PAGE_DOC_1.content.fullText,
-                keywords: data.PAGE_DOC_1.content.keywords,
-                description: data.PAGE_DOC_1.content.description,
-            },
-            visits: [{ timestamp: visit1 }],
-            tags: [tag1, tag2],
-            bookmark: bookmark1,
-            screenshot: data.TEST_SCREENSHOT,
-            favIcon: data.TEST_FAVICON,
-        })
+        await importNewPage(data.EXPORTED_PAGE_1)
 
         const { docs: [result] } = await search.search({
             query: 'mining',
