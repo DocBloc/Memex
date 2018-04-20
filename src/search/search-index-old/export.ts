@@ -48,7 +48,13 @@ const fetchIndexPageBatch = (
     new Promise((resolve, reject) => {
         const data = new Map<string, any>()
         ;(<any>index)
-            .createReadStream({ gte: from, lte: to, limit, keyAsBuffer: false })
+            .createReadStream({
+                gte: from,
+                lte: to,
+                limit,
+                keyAsBuffer: false,
+                valueAsBuffer: false,
+            })
             .on('data', ({ key, value }) => data.set(key, value))
             .on('error', err => reject(err))
             .on('end', () => resolve(data))
