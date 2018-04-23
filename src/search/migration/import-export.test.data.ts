@@ -1,3 +1,5 @@
+import { ExportedPage } from './'
+
 export const TEST_VISIT_1 = Date.now()
 export const TEST_BOOKMARK_1 = Date.now() + 5000
 
@@ -26,7 +28,7 @@ export const PAGE_DOC_1 = {
     _id: 'page/Mi1zcHl3YXJlLmNvbS9yZW1vdmUtc2t5cGUtdmlydXMuaHRtbA%3D%3D',
 }
 
-export const EXPORTED_PAGE_1 = {
+export const EXPORTED_PAGE_1: Partial<ExportedPage> = {
     // Import indexed (searchable) data
     url: '2-spyware.com/remove-skype-virus.html',
     domain: '2-spyware.com',
@@ -85,7 +87,6 @@ export const EXPORTED_PAGE_1 = {
         'virus',
         'removal',
         'guide',
-        '-',
         'jan',
         '2018',
         'update',
@@ -105,7 +106,7 @@ export const EXPORTED_PAGE_1 = {
 
     // Data used for other, non-page, data colletions
     bookmark: TEST_BOOKMARK_1,
-    favIcon: TEST_FAVICON,
+    favIconURI: TEST_FAVICON,
     visits: [{ timestamp: TEST_VISIT_1 }],
     tags: ['virus', 'fix'],
 }
