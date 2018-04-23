@@ -65,7 +65,6 @@ describe('New search index', () => {
     })
 
     test('Importing data', async () => {
-        const bookmark1 = Date.now() + 5000
         await importNewPage(data.EXPORTED_PAGE_1)
 
         const { docs: [result] } = await search.search({
@@ -73,7 +72,10 @@ describe('New search index', () => {
             mapResultsFunc: r => r,
         })
 
-        expect(result).toEqual([data.PAGE_DOC_1.normalizedUrl, bookmark1])
+        expect(result).toEqual([
+            data.PAGE_DOC_1.normalizedUrl,
+            data.TEST_BOOKMARK_1,
+        ])
     })
 })
 
