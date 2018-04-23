@@ -1,6 +1,6 @@
 import memdown from 'memdown'
-import * as fakeIDBFactory from 'fake-indexeddb'
-import * as fakeIDBKeyRange from 'fake-indexeddb/lib/FDBKeyRange'
+import * as indexedDB from 'fake-indexeddb'
+import * as IDBKeyRange from 'fake-indexeddb/lib/FDBKeyRange'
 import { handleAttachment as addPouchPageAttachment } from '../../page-storage/store-page'
 import * as search from '../'
 import * as oldIndex from '../search-index-old'
@@ -13,6 +13,8 @@ import { MigrationManager, ExportedPage } from './'
 jest.mock('../search-index-new/models/abstract-model')
 
 async function insertTestPageIntoOldIndex() {
+    search.getBackend._reset({ useOld: true })
+
     await search.addPage({
         pageDoc: data.PAGE_DOC_1,
         bookmarkDocs: [],
@@ -39,72 +41,72 @@ async function insertTestPageIntoOldIndex() {
     )
 }
 
-describe('Old search index', () => {
-    beforeEach(async () => {
-        search.getBackend._reset({ useOld: true })
-        oldIndex.init({ levelDown: memdown() })
+async function resetDataSources(dbName = 'test') {
+    // Don't have any destroy methods available;
+    //   => update pointer to memdown and manually delete fake-indexeddb's DB
+    indexedDB.deleteDatabase(dbName)
+    oldIndex.init({ levelDown: memdown() })
+    newIndex.init({ indexedDB, IDBKeyRange, dbName })
+}
 
-        await insertTestPageIntoOldIndex()
-    })
+describe('Old=>New index migration', () => {
+    describe('read ops', () => {
+        beforeAll(async () => {
+            await resetDataSources()
+            await insertTestPageIntoOldIndex()
+        })
 
-    test('Exporting data', async () => {
-        for await (const { pages: [page] } of exportOldPages()) {
-            expect(page).toEqual(data.EXPORTED_PAGE_1)
-        }
-    })
-})
-
-describe('New search index', () => {
-    beforeEach(async () => {
-        search.getBackend._reset({ useOld: false })
-        newIndex.init({
-            indexedDB: fakeIDBFactory,
-            IDBKeyRange: fakeIDBKeyRange,
-            dbName: 'dexie',
+        test('Exporting old-index data', async () => {
+            for await (const { pages: [page] } of exportOldPages()) {
+                expect(page).toEqual(data.EXPORTED_PAGE_1)
+            }
         })
     })
 
-    test('Importing data', async () => {
-        await importNewPage(data.EXPORTED_PAGE_1)
-
-        const { docs: [result] } = await search.search({
-            query: 'mining',
-            mapResultsFunc: r => r,
+    describe('read-write ops', () => {
+        beforeEach(async () => {
+            await resetDataSources()
+            await insertTestPageIntoOldIndex()
         })
 
-        expect(result).toEqual([
-            data.PAGE_DOC_1.normalizedUrl,
-            data.TEST_BOOKMARK_1,
-        ])
+        test('Importing data to new index', async () => {
+            search.getBackend._reset({ useOld: false })
+
+            await importNewPage(data.EXPORTED_PAGE_1)
+
+            const { docs: [result] } = await search.search({
+                query: 'mining',
+                mapResultsFunc: r => r,
+            })
+
+            expect(result).toEqual([
+                data.PAGE_DOC_1.normalizedUrl,
+                data.TEST_BOOKMARK_1,
+            ])
+        })
+
+        test('Simple full migration', async () => {
+            // Set up to do same search, resolving to first result
+            const doSearch = () =>
+                search
+                    .search({
+                        query: 'virus',
+                        mapResultsFunc: results =>
+                            results.map(([id, time, doc]) => [id, time]),
+                    })
+                    .then(res => res.docs[0])
+
+            search.getBackend._reset({ useOld: true })
+            const oldResult = await doSearch()
+            expect(oldResult[0]).toEqual(data.PAGE_DOC_1._id)
+
+            // Perform migration then reset the backend to point to new index
+            await new MigrationManager().start()
+            search.getBackend._reset({ useOld: false })
+
+            // New index should get same doc with updated unencoded URL ID
+            const newResultPostMigration = await doSearch()
+            expect(newResultPostMigration[0]).toEqual(data.EXPORTED_PAGE_1.url)
+        })
     })
 })
-
-// describe.skip('Migration', () => {
-//     test('simple migration', async () => {
-//         search.getBackend._reset({ useOld: true })
-//         oldIndex.init({ levelDown: memdown() })
-//         await db.erase()
-//         await insertTestPageIntoOldIndex()
-
-//         newIndex.init({
-//             indexedDB: fakeIDBFactory,
-//             IDBKeyRange: fakeIDBKeyRange,
-//             dbName: 'dexie',
-//         })
-
-//         await migrate()
-
-//         const { docs: results } = await search.search({
-//             query: 'virus',
-//             mapResultsFunc: async results => results,
-//         })
-//         expect(results).toEqual([
-//             expect.objectContaining({
-//                 url: 'https://www.2-spyware.com/remove-skype-virus.html',
-//                 title: 'Remove Skype virus (Removal Guide) - Jan 2018 update',
-//                 screenshot: TEST_SCREENSHOT,
-//                 favIcon: TEST_FAVICON,
-//             }),
-//         ])
-//     })
-// })
