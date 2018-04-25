@@ -18,14 +18,6 @@ export class IdleManager {
         active: new Set<Handler>(),
     }
 
-    constructor({ idle = browser.idle }) {
-        // Run all handlers in specific state corresponding to idle state change
-        idle.onStateChanged.addListener(this.handleIdleStateChange)
-    }
-
-    private handleIdleStateChange = (state: IdleState) =>
-        [...this.handlers[state]].map(this.runHandler)
-
     private runHandler = (handler: Handler) =>
         Promise.resolve(handler()).catch(this._errHandler)
 
@@ -38,6 +30,9 @@ export class IdleManager {
     set errHandler(handler: ErrHandler) {
         this._errHandler = handler
     }
+
+    public handleIdleStateChange = (state: IdleState) =>
+        [...this.handlers[state]].map(this.runHandler)
 
     /**
      * Allow setting up of logic to be run on different browser idle events.
@@ -57,5 +52,11 @@ export class IdleManager {
     }
 }
 
-const idleManager = new IdleManager({})
+const idleManager = new IdleManager()
+
+if (browser.idle) {
+    // Run all handlers in specific state corresponding to idle state change
+    browser.idle.onStateChanged.addListener(idleManager.handleIdleStateChange)
+}
+
 export { idleManager }
