@@ -145,7 +145,7 @@ describe('Old=>New index migration', () => {
             expect(oldResult[0]).toEqual(data.PAGE_DOC_1._id)
 
             // Perform migration then reset the backend to point to new index
-            await new MigrationManager().start()
+            await new MigrationManager({}).start()
             search.getBackend._reset({ useOld: false })
 
             // New index should get same doc with updated unencoded URL ID

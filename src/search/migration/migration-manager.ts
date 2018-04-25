@@ -1,10 +1,16 @@
+import noop from 'lodash/fp/noop'
 import whenAllSettled from 'when-all-settled'
 
 import exportOldPages, { ExportParams } from '../search-index-old/export'
 import importNewPage from '../search-index-new/import'
 
+export interface Props {
+    concurrency: number
+    onComplete: () => void
+}
+
 export class MigrationManager {
-    static DEF_PARAMS: ExportParams = {
+    private static DEF_PARAMS: ExportParams = {
         chunkSize: 10,
         startKey: 'page/',
         endKey: 'page/\uffff',
@@ -21,21 +27,30 @@ export class MigrationManager {
     private currKey = MigrationManager.DEF_PARAMS.startKey
 
     private concurrency: number
+    private onComplete: () => void
 
-    constructor(initConcurrency = MigrationManager.DEF_PARAMS.chunkSize) {
-        this.concurrency = initConcurrency
+    constructor({
+        concurrency = MigrationManager.DEF_PARAMS.chunkSize,
+        onComplete = noop,
+    }: Partial<Props>) {
+        this.concurrency = concurrency
+        this.onComplete = onComplete
     }
 
+    /**
+     * Will reject if `stop()` method has been called. Will resolve when old
+     * page data is exhausted.
+     */
     private async migrate(opts: Partial<ExportParams>) {
         const exportParams = { ...MigrationManager.DEF_PARAMS, ...opts }
 
         for await (const { pages, lastKey } of exportOldPages(exportParams)) {
             this.currKey = lastKey
 
-            // If `stop()` method has been called, break out of this loop (one chance per iteration)
+            // If `stop()` method has been called, throw error to signal to caller
             if (this.isCancelled) {
                 this.isCancelled = false
-                break
+                throw new Error()
             }
 
             await whenAllSettled(pages.map(importNewPage))
@@ -49,6 +64,8 @@ export class MigrationManager {
      */
     public start(concurrency = this.concurrency) {
         return this.migrate({ chunkSize: concurrency, startKey: this.currKey })
+            .then(this.onComplete)
+            .catch(noop) // Errors should only be from interruptions
     }
 
     /**
