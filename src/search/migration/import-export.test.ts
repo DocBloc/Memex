@@ -8,7 +8,8 @@ import * as newIndex from '../search-index-new'
 import exportOldPages from '../search-index-old/export'
 import importNewPage from '../search-index-new/import'
 import * as data from './import-export.test.data'
-import { MigrationManager, ExportedPage } from './'
+import { MigrationManager } from './migration-manager'
+import { ExportedPage } from './types'
 
 jest.mock('../search-index-new/models/abstract-model')
 
