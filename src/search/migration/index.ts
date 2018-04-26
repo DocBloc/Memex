@@ -2,18 +2,13 @@ import createNotif from '../../util/notifications'
 import { idleManager } from '../../util/idle'
 import { MigrationManager } from './migration-manager'
 import { getBackend } from '../'
+import { MIGRATE_NOTIF } from './constants'
 
 window['Migrate'] = MigrationManager
 
 const migrator = new MigrationManager({
     onComplete() {
-        createNotif({
-            requireInteraction: true,
-            title: 'Memex Extension',
-            message:
-                'Your data has been migrated to our new and improved index!',
-        })
-
+        createNotif(MIGRATE_NOTIF)
         // Update global setting to force switch to using new index for all interface methods
         getBackend._reset({ useOld: false })
     },
