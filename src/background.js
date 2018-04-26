@@ -1,4 +1,6 @@
 import urlRegex from 'url-regex'
+import Raven from 'raven-js'
+
 import 'src/activity-logger/background'
 import 'src/search/background'
 import 'src/analytics/background'
@@ -10,7 +12,7 @@ import {
 } from 'src/blacklist/background'
 import * as index from 'src/search'
 import analytics from 'src/analytics'
-import createNotif from 'src/util/notifications'
+// import createNotif from 'src/util/notifications'
 import {
     OPEN_OVERVIEW,
     OPEN_OPTIONS,
@@ -22,6 +24,11 @@ import * as models from 'src/search/search-index-new/models'
 window.index = index
 window.storage = db
 window.indexModels = models
+
+// Set up the sentry runtime error config
+if (process.env.SENTRY_DSN) {
+    Raven.config(process.env.SENTRY_DSN).install()
+}
 
 export const OVERVIEW_URL = '/overview/overview.html'
 export const OPTIONS_URL = '/options/options.html'
